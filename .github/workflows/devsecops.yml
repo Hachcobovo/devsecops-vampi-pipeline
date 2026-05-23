@@ -74,3 +74,4 @@ jobs:
         uses: zaproxy/action-baseline@v0.12.0
         with:
           target: 'http://localhost:5001'
+          allow_issue_writing: false
