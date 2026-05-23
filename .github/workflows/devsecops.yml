@@ -63,10 +63,12 @@ jobs:
         run: docker compose up -d vampi-secure
 
       - name: Wait for app
-        run: sleep 20
+        run: sleep 30
 
       - name: Check running containers
-        run: docker ps
+        run: 
+          docker ps
+          docker compose logs vampi-secure
 
       - name: ZAP Scan
         uses: zaproxy/action-baseline@v0.14.0
