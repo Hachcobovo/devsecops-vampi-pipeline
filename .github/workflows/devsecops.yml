@@ -72,11 +72,34 @@ jobs:
 
       - name: Fix coverage.xml paths for SonarCloud
         run: |
-          echo "=== BEFORE SED ==="
-          head -10 coverage.xml
-          sed -i 's|/home/runner/work/[^/]*/[^/]*/||g' coverage.xml
-          echo "=== AFTER SED ==="
-          head -10 coverage.xml
+          python3 - << 'EOF'
+          import re
+
+          with open('coverage.xml', 'r') as f:
+              content = f.read()
+
+          # Thay toàn bộ block <sources> bằng đường dẫn tương đối
+          content = re.sub(
+              r'<sources>.*?</sources>',
+              '<sources><source>.</source></sources>',
+              content,
+              flags=re.DOTALL
+          )
+
+          # Fix đường dẫn trong filename attribute
+          content = re.sub(
+              r'/home/runner/work/[^/]*/[^/]*/',
+              '',
+              content
+          )
+
+          with open('coverage.xml', 'w') as f:
+              f.write(content)
+
+          # Kiểm tra kết quả
+          with open('coverage.xml', 'r') as f:
+              print('\n'.join(f.readlines()[:12]))
+          EOF
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@master
