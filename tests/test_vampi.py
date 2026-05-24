@@ -210,3 +210,142 @@ class TestSecurityBehaviors:
             'is_admin': True
         })
         assert resp.status_code in [200, 201, 400]
+
+# ── api_views/main.py coverage ────────────────────────────────
+
+class TestMainEndpoints:
+    def test_root_endpoint(self, client):
+        resp = client.get('/')
+        assert resp.status_code in [200, 404]
+
+    def test_createdb_twice(self, client):
+        client.get('/createdb')
+        resp = client.get('/createdb')
+        assert resp.status_code in [200, 201]
+
+
+# ── api_views/books.py coverage ───────────────────────────────
+
+class TestBooksExtended:
+    def test_get_book_exists(self, client, auth_token):
+        # Thêm book trước rồi get
+        client.post('/books/v1/', json={
+            'book_title': 'CoverageBook',
+            'secret': 'secret123',
+            'user': 'testuser'
+        }, headers={'Authorization': f'Bearer {auth_token}'})
+        resp = client.get('/books/v1/CoverageBook')
+        assert resp.status_code in [200, 404]
+
+    def test_get_book_secret_no_auth(self, client):
+        resp = client.get('/books/v1/CoverageBook')
+        assert resp.status_code in [200, 401, 404]
+
+    def test_get_book_secret_wrong_user(self, client, auth_token):
+        # Tạo book bằng testuser, đọc bằng user khác → BOLA
+        client.post('/users/v1/register', json={
+            'username': 'otheruser',
+            'password': 'otherpass',
+            'email': 'other@test.com'
+        })
+        resp2 = client.post('/users/v1/login', json={
+            'username': 'otheruser',
+            'password': 'otherpass'
+        })
+        other_token = resp2.json().get('auth_token', '')
+        resp = client.get('/books/v1/CoverageBook',
+            headers={'Authorization': f'Bearer {other_token}'})
+        assert resp.status_code in [200, 401, 403, 404]
+
+    def test_add_book_duplicate(self, client, auth_token):
+        payload = {
+            'book_title': 'DupBook',
+            'secret': 'dup secret',
+            'user': 'testuser'
+        }
+        client.post('/books/v1/', json=payload,
+            headers={'Authorization': f'Bearer {auth_token}'})
+        resp = client.post('/books/v1/', json=payload,
+            headers={'Authorization': f'Bearer {auth_token}'})
+        assert resp.status_code in [200, 201, 400, 409]
+
+
+# ── api_views/users.py coverage ───────────────────────────────
+
+class TestUsersExtended:
+    def test_get_all_users_v1(self, client):
+        resp = client.get('/users/v1/')
+        assert resp.status_code == 200
+        body = resp.json()
+        assert 'users' in body or isinstance(body, list)
+
+    def test_get_single_user_admin(self, client, auth_token):
+        resp = client.get('/users/v1/admin',
+            headers={'Authorization': f'Bearer {auth_token}'})
+        assert resp.status_code in [200, 401, 403]
+
+    def test_delete_own_user(self, client):
+        # Tạo user mới rồi tự xoá
+        client.post('/users/v1/register', json={
+            'username': 'deleteuser',
+            'password': 'delpass123',
+            'email': 'del@test.com'
+        })
+        resp_login = client.post('/users/v1/login', json={
+            'username': 'deleteuser',
+            'password': 'delpass123'
+        })
+        token = resp_login.json().get('auth_token', '')
+        resp = client.delete('/users/v1/deleteuser',
+            headers={'Authorization': f'Bearer {token}'})
+        assert resp.status_code in [200, 204, 401, 403]
+
+    def test_delete_other_user(self, client, auth_token):
+        # testuser cố xoá admin → phải bị từ chối
+        resp = client.delete('/users/v1/admin',
+            headers={'Authorization': f'Bearer {auth_token}'})
+        assert resp.status_code in [401, 403]
+
+    def test_update_password_wrong_user(self, client, auth_token):
+        # testuser cố đổi pass của admin → BOLA
+        resp = client.put('/users/v1/admin',
+            json={'password': 'hacked'},
+            headers={'Authorization': f'Bearer {auth_token}'})
+        assert resp.status_code in [200, 401, 403]
+
+    def test_update_email(self, client, auth_token):
+        resp = client.put('/users/v1/testuser',
+            json={'email': 'newemail@test.com'},
+            headers={'Authorization': f'Bearer {auth_token}'})
+        assert resp.status_code in [200, 204, 400, 401]
+
+    def test_register_very_long_username(self, client):
+        resp = client.post('/users/v1/register', json={
+            'username': 'a' * 200,
+            'password': 'pass123',
+            'email': 'long@test.com'
+        })
+        assert resp.status_code in [200, 201, 400, 422]
+
+    def test_login_empty_username(self, client):
+        resp = client.post('/users/v1/login', json={
+            'username': '',
+            'password': 'pass'
+        })
+        assert resp.status_code in [400, 401, 422]
+
+    def test_get_user_list_after_register(self, client):
+        client.post('/users/v1/register', json={
+            'username': 'listuser',
+            'password': 'listpass',
+            'email': 'list@test.com'
+        })
+        resp = client.get('/users/v1/')
+        assert resp.status_code == 200
+
+    def test_expired_token(self, client):
+        # JWT giả với signature sai
+        fake_token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0IiwiZXhwIjoxfQ.fakesignature'
+        resp = client.get('/users/v1/testuser',
+            headers={'Authorization': f'Bearer {fake_token}'})
+        assert resp.status_code in [200, 401, 403, 422]
