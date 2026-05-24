@@ -64,7 +64,7 @@ jobs:
           pytest --cov=. \
                  --cov-report=xml:coverage.xml \
                  --cov-report=term-missing \
-                 --ignore=tests \
+                 --omit="tests/*,*/__pycache__/*" \
                  -v
         # Nếu test fail thì vẫn tiếp tục để SonarCloud nhận coverage
         continue-on-error: true
