@@ -101,11 +101,20 @@ jobs:
                       print(line.rstrip())
           EOF
 
+      - name: Verify coverage.xml exists before scan
+        run: |
+          ls -lah coverage.xml
+          echo "First 5 filename lines:"
+          grep 'filename=' coverage.xml | head -5
+
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@master
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: "https://sonarcloud.io"
+        with:
+          args: >-
+            -Dsonar.python.coverage.reportPaths=coverage.xml
 
       - name: SonarCloud Quality Gate Check
         uses: sonarsource/sonarqube-quality-gate-action@master
