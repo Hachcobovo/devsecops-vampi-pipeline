@@ -79,4 +79,4 @@ jobs:
           format: openapi
           allow_issue_writing: false
           fail_action: true
-          artifact_name: 'zap-api-report'
+          artifact_name: ''
