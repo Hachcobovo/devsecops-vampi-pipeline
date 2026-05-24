@@ -12,29 +12,30 @@ os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-coverage')
 
 @pytest.fixture(scope='session')
 def client():
-    from config import vuln_app
+    from config import vuln_app, db
     vuln_app.app.config['TESTING'] = True
     vuln_app.app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
-    with vuln_app.app.test_client() as c:
+    # Dùng connexion test client, KHÔNG phải vuln_app.app.test_client()
+    with vuln_app.test_client() as c:
+        with vuln_app.app.app_context():
+            db.create_all()
         yield c
 
 
 @pytest.fixture(scope='session')
 def auth_token(client):
-    """Đăng ký + đăng nhập, lấy token để dùng cho các test cần auth"""
-    # Đăng ký user
     client.post('/users/v1/register', json={
         'username': 'testuser',
         'password': 'testpass123',
         'email': 'test@test.com'
     })
-    # Đăng nhập
     resp = client.post('/users/v1/login', json={
         'username': 'testuser',
         'password': 'testpass123'
     })
-    data = json.loads(resp.data)
-    return data.get('auth_token', '')
+    # connexion 3.x: resp.json thay vì json.loads(resp.data)
+    body = resp.json()
+    return body.get('auth_token', '')
 
 
 # ── Users endpoints ──────────────────────────────────────────
@@ -73,7 +74,7 @@ class TestUsersEndpoints:
             'password': 'mypassword'
         })
         assert resp.status_code == 200
-        data = json.loads(resp.data)
+        data = resp.json()
         assert 'auth_token' in data
 
     def test_login_wrong_password(self, client):
@@ -128,13 +129,13 @@ class TestBooksEndpoints:
 
     def test_get_all_books_returns_list(self, client):
         resp = client.get('/books/v1/')
-        data = json.loads(resp.data)
+        data = resp.json()
         assert isinstance(data, (list, dict))
 
     def test_get_book_by_name(self, client):
         # Lấy danh sách trước rồi mới get theo tên
         resp = client.get('/books/v1/')
-        data = json.loads(resp.data)
+        data = resp.json()
         # books trả về dict có key 'Books'
         books = data.get('Books', data) if isinstance(data, dict) else data
         if books:
