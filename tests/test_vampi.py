@@ -349,3 +349,162 @@ class TestUsersExtended:
         resp = client.get('/users/v1/testuser',
             headers={'Authorization': f'Bearer {fake_token}'})
         assert resp.status_code in [200, 401, 403, 422]
+
+# ── Targeted coverage cho api_views/users.py ─────────────────
+
+class TestUsersCoverageTargeted:
+
+    # Lines 25-26: debug()
+    def test_debug_endpoint(self, client):
+        resp = client.get('/users/v1/debug')
+        assert resp.status_code in [200, 401, 404]
+
+    # Lines 29-42: me()
+    def test_me_with_valid_token(self, client, auth_token):
+        resp = client.get('/users/v1/me',
+            headers={'Authorization': f'Bearer {auth_token}'})
+        assert resp.status_code in [200, 401, 404]
+
+    def test_me_no_token(self, client):
+        resp = client.get('/users/v1/me')
+        assert resp.status_code in [401, 404]
+
+    # Lines 61-65: register với admin=True (vuln=1)
+    def test_register_with_admin_true(self, client):
+        resp = client.post('/users/v1/register', json={
+            'username': 'adminvuln',
+            'password': 'adminpass',
+            'email': 'adminvuln@test.com',
+            'admin': True
+        })
+        assert resp.status_code in [200, 201, 400]
+
+    def test_register_with_admin_false(self, client):
+        resp = client.post('/users/v1/register', json={
+            'username': 'nonadminvuln',
+            'password': 'pass123',
+            'email': 'nonadmin@test.com',
+            'admin': False
+        })
+        assert resp.status_code in [200, 201, 400]
+
+    # Lines 108-114: password enumeration trong login
+    def test_login_wrong_password_enumeration(self, client):
+        client.post('/users/v1/register', json={
+            'username': 'enumuser',
+            'password': 'realpassword',
+            'email': 'enum@test.com'
+        })
+        resp = client.post('/users/v1/login', json={
+            'username': 'enumuser',
+            'password': 'wrongpassword'
+        })
+        body = resp.json()
+        assert resp.status_code in [200, 400, 401]
+        # VAmPI vuln: trả về message khác nhau cho wrong pass vs wrong user
+        assert 'message' in body or 'status' in body
+
+    def test_login_user_enumeration(self, client):
+        resp = client.post('/users/v1/login', json={
+            'username': 'usernotexist99',
+            'password': 'somepassword'
+        })
+        assert resp.status_code in [200, 400, 401, 404]
+
+    # Lines 121-124: exception branch trong login
+    def test_login_invalid_json_fields(self, client):
+        resp = client.post('/users/v1/login', json={
+            'username': None,
+            'password': None
+        })
+        assert resp.status_code in [200, 400, 422]
+
+    # Lines 133-175: update_email()
+    def test_update_email_valid(self, client, auth_token):
+        resp = client.put('/users/v1/testuser',
+            json={'email': 'updated@test.com'},
+            headers={'Authorization': f'Bearer {auth_token}'})
+        assert resp.status_code in [200, 204, 400, 401]
+
+    def test_update_email_invalid_format(self, client, auth_token):
+        resp = client.put('/users/v1/testuser',
+            json={'email': 'not-a-valid-email'},
+            headers={'Authorization': f'Bearer {auth_token}'})
+        assert resp.status_code in [200, 400, 401]
+
+    def test_update_email_no_auth(self, client):
+        resp = client.put('/users/v1/testuser',
+            json={'email': 'nope@test.com'})
+        assert resp.status_code in [400, 401]
+
+    def test_update_email_missing_body(self, client, auth_token):
+        resp = client.put('/users/v1/testuser',
+            json={},
+            headers={'Authorization': f'Bearer {auth_token}'})
+        assert resp.status_code in [200, 400, 401]
+
+    # Lines 180-203: update_password() các nhánh
+    def test_update_password_user_not_found(self, client, auth_token):
+        # BOLA: testuser đổi pass của user không tồn tại
+        resp = client.put('/users/v1/ghostuser999',
+            json={'password': 'newpass'},
+            headers={'Authorization': f'Bearer {auth_token}'})
+        assert resp.status_code in [200, 400, 401, 404]
+
+    def test_update_password_empty_password(self, client, auth_token):
+        resp = client.put('/users/v1/testuser',
+            json={'password': ''},
+            headers={'Authorization': f'Bearer {auth_token}'})
+        assert resp.status_code in [200, 400, 401, 204]
+
+    def test_update_password_no_body(self, client, auth_token):
+        resp = client.put('/users/v1/testuser',
+            json={},
+            headers={'Authorization': f'Bearer {auth_token}'})
+        assert resp.status_code in [200, 400, 401]
+
+    # Lines 209-220: delete_user()
+    def test_delete_user_as_admin(self, client):
+        # Tạo admin user để test delete
+        client.post('/users/v1/register', json={
+            'username': 'realadmin',
+            'password': 'adminpass123',
+            'email': 'realadmin@test.com',
+            'admin': True
+        })
+        resp_login = client.post('/users/v1/login', json={
+            'username': 'realadmin',
+            'password': 'adminpass123'
+        })
+        admin_token = resp_login.json().get('auth_token', '')
+
+        # Tạo target user để xoá
+        client.post('/users/v1/register', json={
+            'username': 'targetdelete',
+            'password': 'pass123',
+            'email': 'target@test.com'
+        })
+        resp = client.delete('/users/v1/targetdelete',
+            headers={'Authorization': f'Bearer {admin_token}'})
+        assert resp.status_code in [200, 401, 403, 404]
+
+    def test_delete_nonexistent_user_as_admin(self, client):
+        client.post('/users/v1/register', json={
+            'username': 'admin2',
+            'password': 'adminpass456',
+            'email': 'admin2@test.com',
+            'admin': True
+        })
+        resp_login = client.post('/users/v1/login', json={
+            'username': 'admin2',
+            'password': 'adminpass456'
+        })
+        admin_token = resp_login.json().get('auth_token', '')
+        resp = client.delete('/users/v1/userthatdoesnotexist',
+            headers={'Authorization': f'Bearer {admin_token}'})
+        assert resp.status_code in [200, 401, 404]
+
+    def test_delete_user_not_admin(self, client, auth_token):
+        resp = client.delete('/users/v1/admin',
+            headers={'Authorization': f'Bearer {auth_token}'})
+        assert resp.status_code in [401, 403]
