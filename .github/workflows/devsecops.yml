@@ -33,7 +33,6 @@ jobs:
         uses: SonarSource/sonarqube-scan-action@master
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      # Kích hoạt Quality Gate cho Sonar
       - name: SonarQube Quality Gate Check
         uses: sonarsource/sonarqube-quality-gate-action@master
         timeout-minutes: 5
@@ -51,21 +50,18 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           command: test
-          args: --severity-threshold=high
+          args: --severity-threshold=high --file=requirements.txt
 
   dast_zap:
     needs: [sast_semgrep, sast_sonarqube, sca_snyk]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Chạy ứng dụng bản lỗi (Vulnerable) để quét DAST
+      - name: Run Vulnerable App for DAST
         run: docker compose up -d vampi-vulnerable
-        
-      - name: Chờ ứng dụng khởi động hoàn toàn
+      - name: Wait for app
         run: sleep 20
-        
-      - name: Quét lỗ hổng API bằng OWASP ZAP
+      - name: Run ZAP Scan
         run: |
           docker run --network=host -v $(pwd):/zap/wrk/:rw ghcr.io/zaproxy/zaproxy:stable zap-api-scan.py \
             -t http://localhost:5002/api/v1/openapi.json \
