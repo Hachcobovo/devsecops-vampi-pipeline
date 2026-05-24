@@ -78,7 +78,6 @@ jobs:
           with open('coverage.xml', 'r') as f:
               content = f.read()
 
-          # Thay toàn bộ block <sources> bằng đường dẫn tương đối
           content = re.sub(
               r'<sources>.*?</sources>',
               '<sources><source>.</source></sources>',
@@ -86,7 +85,6 @@ jobs:
               flags=re.DOTALL
           )
 
-          # Fix đường dẫn trong filename attribute
           content = re.sub(
               r'/home/runner/work/[^/]*/[^/]*/',
               '',
@@ -96,9 +94,11 @@ jobs:
           with open('coverage.xml', 'w') as f:
               f.write(content)
 
-          # Kiểm tra kết quả
+          # In tất cả các dòng có filename để kiểm tra path
           with open('coverage.xml', 'r') as f:
-              print('\n'.join(f.readlines()[:12]))
+              for line in f:
+                  if 'filename=' in line:
+                      print(line.rstrip())
           EOF
 
       - name: SonarCloud Scan
