@@ -69,6 +69,14 @@ jobs:
         # Nếu test fail thì vẫn tiếp tục để SonarCloud nhận coverage
         continue-on-error: true
 
+      - name: Fix coverage.xml paths for SonarCloud
+        run: |
+          # SonarCloud cần đường dẫn tương đối, pytest sinh ra đường dẫn tuyệt đối
+          # Lệnh này strip phần /home/runner/work/repo/repo/ ra khỏi mỗi dòng filename
+          sed -i 's|/home/runner/work/[^/]*/[^/]*/||g' coverage.xml
+          # Kiểm tra kết quả — phải thấy filename="app.py" thay vì đường dẫn dài
+          head -20 coverage.xml
+
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@master
         env:
