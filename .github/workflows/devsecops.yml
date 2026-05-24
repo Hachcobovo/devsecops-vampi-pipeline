@@ -72,8 +72,11 @@ jobs:
 
       - name: Fix coverage.xml paths for SonarCloud
         run: |
+          echo "=== BEFORE SED ==="
+          head -10 coverage.xml
           sed -i 's|/home/runner/work/[^/]*/[^/]*/||g' coverage.xml
-          head -20 coverage.xml
+          echo "=== AFTER SED ==="
+          head -10 coverage.xml
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@master
