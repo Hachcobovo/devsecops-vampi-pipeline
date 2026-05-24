@@ -61,10 +61,7 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          pytest --cov=app \
-                 --cov=config \
-                 --cov=models \
-                 --cov=controllers \
+          pytest --cov=. \
                  --cov-report=xml:coverage.xml \
                  --cov-report=term-missing \
                  -v
