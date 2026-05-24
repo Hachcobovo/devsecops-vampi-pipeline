@@ -60,8 +60,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Start vulnerable application
-        run: docker compose up -d vampi-vulnerable
+      - name: Start secure application
+        run: docker compose up -d vampi-secure
 
       - name: Wait for app
         run: sleep 30
@@ -70,8 +70,8 @@ jobs:
         run: docker ps
 
       - name: Check app logs
-        run: docker compose logs vampi-vulnerable
+        run: docker compose logs vampi-secure
 
       - name: Run ZAP Scan via Docker CLI
         run: |
-          docker run --network=host ghcr.io/zaproxy/zaproxy:stable zap-api-scan.py -t http://localhost:5002/openapi.json -f openapi
+          docker run --network=host ghcr.io/zaproxy/zaproxy:stable zap-api-scan.py -t http://localhost:5001/openapi.json -f openapi
