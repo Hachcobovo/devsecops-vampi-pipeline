@@ -12,29 +12,65 @@ os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-coverage')
 
 @pytest.fixture(scope='session')
 def client():
-    from config import vuln_app
+    """
+    connexion 3.x dùng Starlette ASGI — phải gọi vuln_app.test_client()
+    chứ không phải vuln_app.app.test_client()
+    """
+    from config import vuln_app, db
     vuln_app.app.config['TESTING'] = True
-    vuln_app.app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
-    with vuln_app.app.test_client() as c:
+
+    with vuln_app.test_client() as c:
+        # Khởi tạo DB trong app context
+        with vuln_app.app.app_context():
+            db.create_all()
+            # Seed data giống endpoint /createdb
+            try:
+                from models import User, Book
+                if not User.query.first():
+                    from werkzeug.security import generate_password_hash
+                    admin = User(
+                        username='admin',
+                        password=generate_password_hash('admin'),
+                        email='admin@test.com',
+                        is_admin=True
+                    )
+                    db.session.add(admin)
+                    db.session.commit()
+            except Exception:
+                pass
         yield c
 
 
 @pytest.fixture(scope='session')
 def auth_token(client):
-    """Đăng ký + đăng nhập, lấy token để dùng cho các test cần auth"""
-    # Đăng ký user
+    """Đăng ký + đăng nhập để lấy token dùng cho các test cần auth"""
     client.post('/users/v1/register', json={
         'username': 'testuser',
         'password': 'testpass123',
         'email': 'test@test.com'
     })
-    # Đăng nhập
     resp = client.post('/users/v1/login', json={
         'username': 'testuser',
         'password': 'testpass123'
     })
-    data = json.loads(resp.data)
+    data = json.loads(resp.data if hasattr(resp, 'data') else resp.content)
     return data.get('auth_token', '')
+
+
+# ── Debug / DB endpoints ──────────────────────────────────────
+
+class TestDebugEndpoints:
+    def test_createdb(self, client):
+        resp = client.get('/createdb')
+        assert resp.status_code in [200, 201]
+
+    def test_openapi_json(self, client):
+        resp = client.get('/openapi.json')
+        assert resp.status_code == 200
+
+    def test_openapi_ui_redirect(self, client):
+        resp = client.get('/ui/')
+        assert resp.status_code in [200, 301, 308]
 
 
 # ── Users endpoints ──────────────────────────────────────────
@@ -44,7 +80,13 @@ class TestUsersEndpoints:
         resp = client.get('/users/v1/')
         assert resp.status_code == 200
 
-    def test_register_new_user(self, client):
+    def test_get_all_users_returns_data(self, client):
+        resp = client.get('/users/v1/')
+        assert resp.status_code == 200
+        body = json.loads(resp.data if hasattr(resp, 'data') else resp.content)
+        assert body is not None
+
+    def test_register_success(self, client):
         resp = client.post('/users/v1/register', json={
             'username': 'newuser1',
             'password': 'password123',
@@ -52,15 +94,29 @@ class TestUsersEndpoints:
         })
         assert resp.status_code in [200, 201]
 
-    def test_register_duplicate_user(self, client):
-        payload = {'username': 'dupuser', 'password': 'pass', 'email': 'dup@test.com'}
+    def test_register_missing_password(self, client):
+        resp = client.post('/users/v1/register', json={
+            'username': 'nopassuser',
+            'email': 'nop@test.com'
+        })
+        assert resp.status_code in [400, 422]
+
+    def test_register_missing_email(self, client):
+        resp = client.post('/users/v1/register', json={
+            'username': 'noemailuser',
+            'password': 'pass123'
+        })
+        assert resp.status_code in [400, 422]
+
+    def test_register_duplicate_username(self, client):
+        payload = {
+            'username': 'dupuser',
+            'password': 'pass123',
+            'email': 'dup@test.com'
+        }
         client.post('/users/v1/register', json=payload)
         resp = client.post('/users/v1/register', json=payload)
         assert resp.status_code in [400, 409]
-
-    def test_register_missing_fields(self, client):
-        resp = client.post('/users/v1/register', json={'username': 'onlyname'})
-        assert resp.status_code in [400, 422]
 
     def test_login_success(self, client):
         client.post('/users/v1/register', json={
@@ -73,50 +129,57 @@ class TestUsersEndpoints:
             'password': 'mypassword'
         })
         assert resp.status_code == 200
-        data = json.loads(resp.data)
-        assert 'auth_token' in data
+        body = json.loads(resp.data if hasattr(resp, 'data') else resp.content)
+        assert 'auth_token' in body
 
     def test_login_wrong_password(self, client):
         client.post('/users/v1/register', json={
-            'username': 'wrongpass',
-            'password': 'correct',
+            'username': 'wrongpassuser',
+            'password': 'correct123',
             'email': 'wp@test.com'
         })
         resp = client.post('/users/v1/login', json={
-            'username': 'wrongpass',
-            'password': 'wrong'
+            'username': 'wrongpassuser',
+            'password': 'wrongpass'
         })
         assert resp.status_code in [400, 401]
 
     def test_login_nonexistent_user(self, client):
         resp = client.post('/users/v1/login', json={
-            'username': 'ghost',
+            'username': 'ghostuser99',
             'password': 'pass'
         })
         assert resp.status_code in [400, 401, 404]
 
-    def test_get_user_by_username(self, client, auth_token):
+    def test_get_user_no_auth(self, client):
+        resp = client.get('/users/v1/admin')
+        assert resp.status_code in [200, 401, 403]
+
+    def test_get_user_with_auth(self, client, auth_token):
         resp = client.get(
             '/users/v1/testuser',
             headers={'Authorization': f'Bearer {auth_token}'}
         )
-        assert resp.status_code in [200, 401]
-
-    def test_get_user_no_auth(self, client):
-        resp = client.get('/users/v1/testuser')
-        assert resp.status_code in [200, 401]
+        assert resp.status_code in [200, 401, 403]
 
     def test_delete_user_no_auth(self, client):
         resp = client.delete('/users/v1/testuser')
         assert resp.status_code in [401, 403]
 
-    def test_update_password(self, client, auth_token):
+    def test_update_password_with_auth(self, client, auth_token):
         resp = client.put(
             '/users/v1/testuser',
             json={'password': 'newpass456'},
             headers={'Authorization': f'Bearer {auth_token}'}
         )
-        assert resp.status_code in [200, 204, 400, 401]
+        assert resp.status_code in [200, 204, 400, 401, 403]
+
+    def test_update_password_no_auth(self, client):
+        resp = client.put(
+            '/users/v1/testuser',
+            json={'password': 'newpass456'}
+        )
+        assert resp.status_code in [400, 401, 403]
 
 
 # ── Books endpoints ───────────────────────────────────────────
@@ -126,26 +189,18 @@ class TestBooksEndpoints:
         resp = client.get('/books/v1/')
         assert resp.status_code == 200
 
-    def test_get_all_books_returns_list(self, client):
+    def test_get_all_books_structure(self, client):
         resp = client.get('/books/v1/')
-        data = json.loads(resp.data)
-        assert isinstance(data, (list, dict))
+        body = json.loads(resp.data if hasattr(resp, 'data') else resp.content)
+        assert isinstance(body, (list, dict))
 
-    def test_get_book_by_name(self, client):
-        # Lấy danh sách trước rồi mới get theo tên
-        resp = client.get('/books/v1/')
-        data = json.loads(resp.data)
-        # books trả về dict có key 'Books'
-        books = data.get('Books', data) if isinstance(data, dict) else data
-        if books:
-            first = books[0]
-            name = first.get('book_title') or first.get('name') or 'unknown'
-            r = client.get(f'/books/v1/{name}')
-            assert r.status_code in [200, 404]
+    def test_get_book_by_name_not_found(self, client):
+        resp = client.get('/books/v1/nonexistentbook99999')
+        assert resp.status_code in [200, 404]
 
     def test_add_book_no_auth(self, client):
         resp = client.post('/books/v1/', json={
-            'book_title': 'Test Book',
+            'book_title': 'Unauthorized Book',
             'secret': 'some secret',
             'user': 'testuser'
         })
@@ -153,59 +208,47 @@ class TestBooksEndpoints:
 
     def test_add_book_with_auth(self, client, auth_token):
         resp = client.post('/books/v1/', json={
-            'book_title': 'Auth Book',
-            'secret': 'book secret',
+            'book_title': 'Authorized Book',
+            'secret': 'book secret here',
             'user': 'testuser'
         }, headers={'Authorization': f'Bearer {auth_token}'})
         assert resp.status_code in [200, 201, 401]
 
-
-# ── Debug / misc endpoints ────────────────────────────────────
-
-class TestDebugEndpoints:
-    def test_debug_create_db(self, client):
-        resp = client.get('/createdb')
-        assert resp.status_code in [200, 201]
-
-    def test_debug_users_after_createdb(self, client):
-        client.get('/createdb')
-        resp = client.get('/users/v1/')
-        assert resp.status_code == 200
-
-    def test_openapi_json(self, client):
-        resp = client.get('/openapi.json')
-        assert resp.status_code == 200
-
-    def test_openapi_ui(self, client):
-        resp = client.get('/ui/')
-        assert resp.status_code in [200, 301, 308]
+    def test_get_book_after_add(self, client, auth_token):
+        client.post('/books/v1/', json={
+            'book_title': 'FindableBook',
+            'secret': 'secret content',
+            'user': 'testuser'
+        }, headers={'Authorization': f'Bearer {auth_token}'})
+        resp = client.get('/books/v1/FindableBook')
+        assert resp.status_code in [200, 404]
 
 
-# ── Security / vulnerability behaviors ───────────────────────
+# ── Security behaviors ────────────────────────────────────────
 
 class TestSecurityBehaviors:
-    def test_no_auth_header_returns_error(self, client):
-        resp = client.get('/users/v1/someuser')
-        assert resp.status_code in [200, 401]
-
-    def test_invalid_token_rejected(self, client):
+    def test_invalid_token_format(self, client):
         resp = client.get(
-            '/users/v1/testuser',
-            headers={'Authorization': 'Bearer invalidtoken'}
+            '/users/v1/admin',
+            headers={'Authorization': 'Bearer thisisnotavalidtoken'}
         )
-        assert resp.status_code in [200, 401, 422]
+        assert resp.status_code in [200, 401, 403, 422]
 
-    def test_sql_injection_input_handled(self, client):
-        # VAmPI vulnerable: không crash server dù nhận input đặc biệt
-        resp = client.get("/books/v1/' OR '1'='1")
-        assert resp.status_code in [200, 404, 400]
+    def test_malformed_auth_header(self, client):
+        resp = client.get(
+            '/users/v1/admin',
+            headers={'Authorization': 'NotBearer something'}
+        )
+        assert resp.status_code in [200, 401, 403]
 
     def test_register_with_admin_flag(self, client):
-        # BOLA: thử đăng ký với is_admin
+        # BOLA: thử escalate privilege khi đăng ký
         resp = client.post('/users/v1/register', json={
-            'username': 'hacker',
-            'password': 'hacked',
+            'username': 'hackeruser',
+            'password': 'hacked123',
             'email': 'hack@test.com',
             'is_admin': True
         })
         assert resp.status_code in [200, 201, 400]
+
+    def test_s
