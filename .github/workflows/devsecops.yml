@@ -60,8 +60,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Start secure application
-        run: docker compose up -d vampi-secure
+      - name: Start vulnerable application
+        run: docker compose up -d vampi-vulnerable
 
       - name: Wait for app
         run: sleep 30
@@ -70,10 +70,10 @@ jobs:
         run: docker ps
 
       - name: Check app logs
-        run: docker compose logs vampi-secure
+        run: docker compose logs vampi-vulnerable
 
       - name: ZAP Scan
         uses: zaproxy/action-baseline@v0.14.0
         with:
-          target: 'http://localhost:5001'
+          target: 'http://localhost:5002'
           allow_issue_writing: false
