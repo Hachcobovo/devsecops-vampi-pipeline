@@ -73,7 +73,7 @@ jobs:
         run: docker compose logs vampi-vulnerable
 
       - name: ZAP Scan
-        uses: zaproxy/action-full-scan@v0.14.0
+        uses: zaproxy/action-full-scan@v0.12.0
         with:
           target: 'http://localhost:5002'
           allow_issue_writing: false
