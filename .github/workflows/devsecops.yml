@@ -2,51 +2,50 @@ name: DevSecOps Pipeline
 
 on:
   push:
-    branches:
-      - main
-
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Build Docker image
         run: docker build -t vampi .
 
-  semgrep:
+  sast_semgrep:
+    needs: build
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
       - name: Run Semgrep
         uses: returntocorp/semgrep-action@v1
         with:
-          config: p/security-audit
+          config: p/security-audit p/python p/flask
 
-  sonarqube:
+  sast_sonarqube:
+    needs: build
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@master
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      # Kích hoạt Quality Gate cho Sonar
+      - name: SonarQube Quality Gate Check
+        uses: sonarsource/sonarqube-quality-gate-action@master
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-  snyk:
+  sca_snyk:
+    needs: build
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
-      - name: Run snyk
+      - name: Run Snyk SCA
         uses: snyk/actions/python@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -54,24 +53,21 @@ jobs:
           command: test
           args: --severity-threshold=high
 
-  zap_scan:
+  dast_zap:
+    needs: [sast_semgrep, sast_sonarqube, sca_snyk]
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
-      - name: Start secure application
-        run: docker compose up -d vampi-secure
-
-      - name: Wait for app
-        run: sleep 30
-
-      - name: Check running containers
-        run: docker ps
-
-      - name: Check app logs
-        run: docker compose logs vampi-secure
-
-      - name: Run ZAP Scan via Docker CLI
+      
+      - name: Chạy ứng dụng bản lỗi (Vulnerable) để quét DAST
+        run: docker compose up -d vampi-vulnerable
+        
+      - name: Chờ ứng dụng khởi động hoàn toàn
+        run: sleep 20
+        
+      - name: Quét lỗ hổng API bằng OWASP ZAP
         run: |
-          docker run --network=host ghcr.io/zaproxy/zaproxy:stable zap-api-scan.py -t http://localhost:5001/openapi.json -f openapi -l FAIL
+          docker run --network=host -v $(pwd):/zap/wrk/:rw ghcr.io/zaproxy/zaproxy:stable zap-api-scan.py \
+            -t http://localhost:5002/api/v1/openapi.json \
+            -f openapi \
+            -c zap.conf
