@@ -49,6 +49,26 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies + test tools
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run tests with coverage
+        run: |
+          pytest --cov=. \
+                 --cov-report=xml:coverage.xml \
+                 --cov-report=term-missing \
+                 --ignore=tests \
+                 -v
+        # Nếu test fail thì vẫn tiếp tục để SonarCloud nhận coverage
+        continue-on-error: true
+
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@master
         env:
