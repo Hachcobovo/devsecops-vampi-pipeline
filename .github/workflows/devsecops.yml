@@ -67,7 +67,6 @@ jobs:
                  --omit="tests/*,*/__pycache__/*" \
                  -v
         # Nếu test fail thì vẫn tiếp tục để SonarCloud nhận coverage
-        continue-on-error: true
 
       - name: Fix coverage.xml paths for SonarCloud
         run: |
