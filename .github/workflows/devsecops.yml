@@ -74,4 +74,4 @@ jobs:
 
       - name: Run ZAP Scan via Docker CLI
         run: |
-          docker run --network=host ghcr.io/zaproxy/zaproxy:stable zap-api-scan.py -t http://localhost:5001/openapi.json -f openapi
+          docker run --network=host ghcr.io/zaproxy/zaproxy:stable zap-api-scan.py -t http://localhost:5001/openapi.json -f openapi -l FAIL
