@@ -61,13 +61,19 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          pytest --cov=. \
+          pytest --cov=app \
+                 --cov=config \
+                 --cov=models \
+                 --cov=controllers \
                  --cov-report=xml:coverage.xml \
                  --cov-report=term-missing \
-                 --ignore=tests \
                  -v
-        # Nếu test fail thì vẫn tiếp tục để SonarCloud nhận coverage
         continue-on-error: true
+
+      - name: Fix coverage.xml paths for SonarCloud
+        run: |
+          sed -i 's|/home/runner/work/[^/]*/[^/]*/||g' coverage.xml
+          head -20 coverage.xml
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@master
