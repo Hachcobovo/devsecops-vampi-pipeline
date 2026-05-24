@@ -97,6 +97,10 @@ jobs:
     name: "DAST - OWASP ZAP"
     needs: [build, sast_semgrep, sca_snyk]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      security-events: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
